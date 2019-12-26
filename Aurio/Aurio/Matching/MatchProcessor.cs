@@ -518,5 +518,64 @@ namespace Aurio.Matching {
                 matchPair.Matches = filteredMatches;
             }
         }
+
+        /// <summary>
+        /// Converts a list of sorted matches between two tracks into a list of intervals, by grouping all consecutive matches
+        /// whose offset differences stay below a specific threshold into one interval.
+        /// If track B contains two excerpts from track A, the result will be two intervals that tell which excepts of track A
+        /// went into track B.
+        ///
+        /// Track A: AAAAAAAAAAXXXXXXXXXAAAAAAAYYYYYAAAAA
+        /// Track B: XXXXXXXXXYYYYY -> two intervals
+        /// </summary>
+        /// <param name="matches"></param>
+        /// <param name="thresholdMillisecs"></param>
+        /// <returns></returns>
+        public static List<Tuple<Interval, Interval>> ConvertToIntervals(List<Match> matches, int thresholdMillisecs = 1000)
+        {
+            ValidatePairOrder(matches);
+
+            long thresholdTicks = new TimeSpan(0, 0, 0, 0, thresholdMillisecs).Ticks;
+            long previousOffset = 0;
+            long processedMatches = 0;
+            Match intervalStartMatch = null;
+            Match previousMatch = null;
+            var intervals = new List<Tuple<Interval, Interval>>();
+
+            foreach (Match match in matches)
+            {
+                long offset = match.Offset.Ticks;
+
+                if (processedMatches == 0)
+                {
+                    previousOffset = offset;
+                    intervalStartMatch = match;
+                    previousMatch = match;
+                    processedMatches++;
+                    continue;
+                }
+
+                if (Math.Abs(previousOffset - offset) > thresholdTicks)
+                {
+                    // Offset is off, a new interval probably begins
+                    var sourceInterval = new Interval(intervalStartMatch.Track1Time.Ticks, previousMatch.Track1Time.Ticks);
+                    var destinationInterval = new Interval(intervalStartMatch.Track2Time.Ticks, previousMatch.Track2Time.Ticks);
+                    intervals.Add(Tuple.Create(sourceInterval, destinationInterval));
+
+                    intervalStartMatch = match;
+                }
+
+                previousOffset = offset;
+                previousMatch = match;
+                processedMatches++;
+            }
+
+            // Finish last interval
+            var sourceIntervalEnd = new Interval(intervalStartMatch.Track1Time.Ticks, previousMatch.Track1Time.Ticks);
+            var destinationIntervalEnd = new Interval(intervalStartMatch.Track2Time.Ticks, previousMatch.Track2Time.Ticks);
+            intervals.Add(Tuple.Create(sourceIntervalEnd, destinationIntervalEnd));
+
+            return intervals;
+        }
     }
 }
